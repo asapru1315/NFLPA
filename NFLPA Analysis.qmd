@@ -1,0 +1,325 @@
+---
+title: "NFLPA Analysis"
+format: html
+editor: visual
+---
+
+```{r}
+
+library(tidyverse)
+library(nflreadr)
+library(ffscrapr)
+```
+
+```{r warning = FALSE}
+
+player_contracts <- load_contracts() |>
+  mutate(guaranteed_apy = guaranteed / years) |> # guaranteed annually calculation
+  rowwise() |>
+  drop_na(years) |>
+  group_by(player, year_signed, years) |> # create observation for each year on a contract
+  mutate(year = list(year_signed:(year_signed + years - 1))) |> 
+  ungroup() |>
+  unnest(year) |>
+  filter(year >= 2014 & year <= 2023) |> # only past 10 years, no full salary data until 2012
+  mutate(cash_paid = map2_dbl(cols, year, ~{ # pulls a cash paid value from contract history
+    if (is.null(.x)) { 
+      NA 
+    } else {
+      result <- .x %>% filter(year == .y) %>% pull(cash_paid)
+      if(length(result) == 0) NA else result 
+    }
+  })) |>
+  filter(!is.na(cash_paid)) |> # some players are not paid during a year, often retired
+  select(player, team, year, apy, guaranteed_apy, cash_paid) |>
+  distinct() |>
+  group_by(player, year) |>
+  filter(apy == max(apy)) |> # some contracts are restructured, taking the highest value
+  filter(guaranteed_apy == max(guaranteed_apy)) |>
+  distinct() |>
+  ungroup()
+```
+
+```{r}
+
+rosters <- load_rosters(seasons = c(2014:2023)) |>
+  rename(player = full_name, year = season)
+
+player_contracts <- player_contracts |> # some contracts are associated with two teams
+  mutate(has_multiple_teams = str_detect(team, "/"))
+
+player_contracts <- player_contracts |>
+  mutate(
+    player = case_when(
+      player == "Matt Stafford" ~ "Matthew Stafford",
+      player == "Odell Beckham Jr." ~ "Odell Beckham",
+      player == "Robbie Anderson" ~ "Robby Anderson",
+      player == "Clive Wolford" ~ "Clive Walford",
+      player == "Christopher Herndon IV" ~ "Christopher Herndon",
+      player == "Walt Powell" ~ "Walter Powell",
+      player == "Pierre Strong Jr." ~ "Pierre Strong",
+      player == "D.J. Scaife Jr." ~ "DJ Scaife",
+      player == "Mario Edwards Jr." ~ "Mario Edwards",
+      player == "Bennett Skowronek" ~ "Ben Skowronek",
+      player == "Neil Farrell Jr." ~ "Neil Farrell",
+      player == "Darryl Johnson Jr." ~ "Darryl Johnson",
+      player == "Dante Fowler Jr." ~ "Dante Fowler",
+      player == "Andrew Booth Jr." ~ "Andrew Booth",
+      player == "Carlos Basham Jr." ~ "Carlos Basham",
+      player == "William Jackson III" ~ "William Jackson",
+      player == "Starling Thomas V" ~ "Starling Thomas",
+      player == "Lonnie Johnson Jr." ~ "Lonnie Johnson",
+      player == "Kary Vincent Jr." ~ "Kary Vincent",
+      player == "Gary Jennings Jr." ~ "Gary Jennings",
+      player == "Ha-Ha Clinton-Dix" ~ "Ha Ha Clinton-Dix",
+      player == "J.J. Dielman" ~ "J.J Dielman",
+      player == "JaMycal Hasty" ~ "Jamycal Hasty",
+      player == "Joseph Barksdale" ~ "Joe Barksdale",
+      player == "Eric Scott" ~ "Eric Scott Jr.",
+      player == "Robbie Chosen" & year == 2021 ~ "Robby Anderson",
+      player == "Robbie Chosen" & year == 2022 ~ "Robby Anderson",
+      player == "Jeff Wilson" & year == 2022 ~ "Jeffery Wilson",
+      player == "Shaquille Mason" & year == 2016 ~ "Shaq Mason",
+      player == "Shaquille Mason" & year == 2017 ~ "Shaq Mason",
+      player == "Shaquille Mason" & year == 2018 ~ "Shaq Mason",
+      player == "Shaquille Mason" & year == 2019 ~ "Shaq Mason",
+      player == "Shaquille Mason" & year == 2023 ~ "Shaq Mason",
+      player == "Trent Brown" & year == 2015 ~ "Trenton Brown",
+      player == "Trent Brown" & year == 2020 ~ "Trenton Brown",
+      player == "Trent Brown" & year == 2021 ~ "Trenton Brown",
+      player == "Trent Brown" & year == 2022 ~ "Trenton Brown",
+      player == "Michael Jordan" & year == 2016 ~ "Mike Jordan",
+      player == "Michael Jordan" & year == 2017 ~ "Mike Jordan",
+      player == "Michael Jordan" & year == 2018 ~ "Mike Jordan",
+      player == "Michael Jordan" & year == 2019 ~ "Mike Jordan",
+      player == "Michael Harris" & year == 2014 ~ "Mike Harris",
+      player == "Vernon Hargreaves" & year == 2019 ~ "Vernon Hargreaves III",
+      player == "Ladarius Gunter" & year == 2016 ~ "LaDarius Gunter",
+       player == "Ladarius Gunter" & year == 2017 ~ "LaDarius Gunter",
+      player == "Deion Calhoun" & year == 2019 ~ "Shaq Calhoun",
+      player == "Ka'dar Hollman" & year == 2019 ~ "Ka'Dar Hollman",
+      player == "Matt Orzech" & year == 2019 ~ "Matthew Orzech",
+      player == "Ugochukwu Amadi" & year == 2019 ~ "Ugo Amadi",
+      player == "Kamrin Moore" & year == 2018 ~ "Kam Moore",
+      player == "R.J. McIntosh" & year == 2018 ~ "RJ McIntosh",
+      TRUE ~ player
+    )
+  )
+
+ multiple_team_contracts <- player_contracts |> # corrects for the last team played for in year
+  filter(has_multiple_teams == TRUE) |>
+  select(-team) |>
+  left_join(rosters, by = join_by(player, year)) |>
+  select(player, team, year, apy, guaranteed_apy, cash_paid) |>
+  mutate(team = case_when(
+    team == "ARZ" ~ "ARI",
+    team == "HST" ~ "HOU",
+    team == "BLT" ~ "BAL",
+    team == "CLV" ~ "CLE",
+    team == "OAK" ~ "LV",
+    team == "LAR" ~ "LA",
+    team == "SD" ~ "LAC",
+    team == "SL" ~ "LA",
+    TRUE ~ team
+  )) |>
+  left_join(load_teams(), by = join_by(team == team_abbr)) |>
+  select(-team) |>
+  rename(team = team_nick) |>
+  select(player, team, year, apy, guaranteed_apy, cash_paid)
+
+player_contracts_cleaned <- player_contracts |> # combines fully cleaned data about salaries
+  filter(has_multiple_teams == FALSE) |>
+  select(-has_multiple_teams) |>
+  bind_rows(multiple_team_contracts) |>
+  mutate(team = case_when(
+    player == "Kenjon Barner" & year == 2014 ~ "Eagles",
+    player == "Daryl Richardson" & year == 2014 ~ "Jets",
+    player == "Tyler Gaffney" & year == 2014 ~ "Patriots",
+    player == "Tyler Gaffney" & year == 2015 ~ "Patriots",
+    player == "James Wright" & year == 2015 ~ "Bengals",
+    player == "Arthur Lynch" & year == 2014 ~ "Dolphins",
+    player == "Randall Telfer" & year == 2015 ~ "Browns",
+    player == "A.J. Derby" & year == 2015 ~ "Patriots",
+    player == "Brandon Thomas" & year == 2014 ~ "49ers",
+    player == "Tre' Jackson" & year == 2016 ~ "Patriots",
+    player == "Mark Asper" & year == 2014 ~ "Giants",
+    player == "Garrett Gilkey" & year == 2015 ~ "Buccaneers",
+    player == "Demetrius Rhaney" & year == 2014 ~ "Rams",
+    player == "John Theus" & year == 2018 ~ "Titans",
+    player == "DeMarcus Love" & year == 2014 ~ "Saints",
+    player == "Jerel Worthy" & year == 2014 ~ "Chiefs",
+    player == "Louis Nix" & year == 2016 ~ "Jaguars",
+    player == "Khyri Thornton" & year == 2014 ~ "Packers",
+    player == "Dante Fowler" & year == 2015 ~ "Jaguars",
+    player == "Joe Kruger" & year == 2014 ~ "Chargers",
+    player == "Nate Palmer" & year == 2014 ~ "Packers",
+    player == "Marquis Flowers" & year == 2015 ~ "Bengals",
+    player == "Kenneth Acker" & year == 2014 ~ "49ers",
+    player == "E.J. Gaines" & year == 2015 ~ "Rams",
+    player == "Tevin Mitchel" & year == 2015 ~ "Commanders",
+    player == "Christopher Herndon" & year == 2018 ~ "Jets",
+    player == "Christopher Herndon" & year == 2019 ~ "Jets",
+    player == "Matthew Wells" & year == 2015 ~ "Rams",
+    TRUE ~ team
+  )) 
+```
+
+```{r}
+
+teams_data <- data.frame(
+  team = c("Panthers", "Seahawks", "Eagles", "Raiders", "Packers", "Bills", "Chargers",
+           "Falcons", "49ers", "Cardinals", "Dolphins", "Vikings", "Jets", "Steelers", 
+           "Giants", "Titans", "Colts", "Saints", "Broncos", "Ravens", "Lions", "Bengals", 
+           "Rams", "Patriots", "Browns", "Bears", "Jaguars", "Cowboys", "Commanders", 
+           "Buccaneers", "Texans", "Chiefs"),
+ team_2014_2017 = c("Charlotte, NC", "Seattle, WA", "Philadelphia, PA", "Oakland, CA", 
+            "Green Bay, WI", "Orchard Park, NY", "San Diego, CA", "Atlanta, GA", 
+            "Santa Clara, CA", "Glendale, AZ", "Miami Gardens, FL", "Minneapolis, MN", 
+            "East Rutherford, NJ", "Pittsburgh, PA", "East Rutherford, NJ", "Nashville, TN", 
+            "Indianapolis, IN", "New Orleans, LA", "Denver, CO", "Baltimore, MD", 
+            "Detroit, MI", "Cincinnati, OH", "St. Louis, MO", "Foxborough, MA", 
+            "Cleveland, OH", "Chicago, IL", "Jacksonville, FL", "Arlington, TX", 
+            "Landover, MD", "Tampa, FL", "Houston, TX", "Kansas City, MO"),
+ team_2018_2019 = c("Charlotte, NC", "Seattle, WA", "Philadelphia, PA", "Oakland, CA", 
+            "Green Bay, WI", "Orchard Park, NY", "Carson, CA", "Atlanta, GA", 
+            "Santa Clara, CA", "Glendale, AZ", "Miami Gardens, FL", "Minneapolis, MN", 
+            "East Rutherford, NJ", "Pittsburgh, PA", "East Rutherford, NJ", "Nashville, TN", 
+            "Indianapolis, IN", "New Orleans, LA", "Denver, CO", "Baltimore, MD", 
+            "Detroit, MI", "Cincinnati, OH", "Los Angeles, CA", "Foxborough, MA", 
+            "Cleveland, OH", "Chicago, IL", "Jacksonville, FL", "Arlington, TX", 
+            "Landover, MD", "Tampa, FL", "Houston, TX", "Kansas City, MO"),
+ team_2020_2023 = c("Charlotte, NC", "Seattle, WA", "Philadelphia, PA", "Paradise, NV", 
+            "Green Bay, WI", "Orchard Park, NY", "Inglewood, CA", "Atlanta, GA", 
+            "Santa Clara, CA", "Glendale, AZ", "Miami Gardens, FL", "Minneapolis, MN", 
+            "East Rutherford, NJ", "Pittsburgh, PA", "East Rutherford, NJ", "Nashville, TN", 
+            "Indianapolis, IN", "New Orleans, LA", "Denver, CO", "Baltimore, MD", 
+            "Detroit, MI", "Cincinnati, OH", "Inglewood, CA", "Foxborough, MA", 
+            "Cleveland, OH", "Chicago, IL", "Jacksonville, FL", "Arlington, TX", 
+            "Landover, MD", "Tampa, FL", "Houston, TX", "Kansas City, MO")
+  )
+
+income_data <- data.frame(
+  city = c("Glendale, AZ", "Carson, CA", "Inglewood, CA", "Los Angeles, CA", "Oakland, CA", 
+  "San Diego, CA", "Santa Clara, CA", "Denver, CO", "Jacksonville, FL", "Miami Gardens, FL", 
+  "Tampa, FL", "Atlanta, GA", "Chicago, IL", "Indianapolis, IN", "New Orleans, LA", 
+  "Foxborough, MA", "Baltimore, MD", "Landover, MD", "Detroit, MI", "Minneapolis, MN", 
+  "Kansas City, MO", "St. Louis, MO", "Charlotte, NC", "East Rutherford, NJ", "Paradise, NV", 
+  "Orchard Park, NY", "Cincinnati, OH", "Cleveland, OH", "Philadelphia, PA", "Pittsburgh, PA",
+  "Nashville, TN", "Arlington, TX", "Houston, TX", "Seattle, WA", "Green Bay, WI"),
+  income_jock_tax_rate = c(0.025, 0.123, 0.123, 0.123, 0.123, 0.123, 0.123, 0.044, 0.02, 0.02,
+                           0.02, 0.0549, 0.0495, 0.0507, 0.0425, 0.05, 0.0895, 0.0895, 0.0545,
+                           0.0985, 0.058, 0.058, 0.045, 0.0897, 0.02, 0.0825, 0.053, 0.06, 
+                           0.0682, 0.0607, 0.02, 0.02, 0.02, 0.02, 0.0765),
+  regional_price_parities = c(1.03683, 1.13109, 1.13109, 1.13109, 1.17895, 1.14511, 1.17895, 
+                              1.07394, 0.98476, 1.11512, 0.99701, 0.98753, 1.05744, 0.93708, 
+                              0.93635, 1.03921, 1.02428, 1.11316, 0.96134, 1.02948, 0.92149, 
+                              0.96671, 0.96888, 1.13048, 0.96526, 0.93882, 0.93479, 0.93073, 
+                              1.00689, 0.93854, 0.96579, 1.03523, 0.98762, 1.13676, 0.9046)
+  )
+
+minimum_salaries <- data.frame(year = c(2013, 2014, 2015, 2016, 2017, 2018, 2019, 
+                                       2020, 2021, 2022, 2023), 
+                              min_salary = c(.405, .420, .435, .450, .465, .480, 
+                                             .495, .610, .660, .705, .750)
+                              )
+                            
+teams_data <- teams_data |>
+  pivot_longer(cols = starts_with("team_"), 
+               names_to = "year", 
+               values_to = "location")
+
+teams_data$year <- gsub("team_", "", teams_data$year)
+
+teams_data <- teams_data |>
+  rowwise() |>
+  mutate(year = list(seq(as.numeric(sub("_.*", "", year)), 
+                         as.numeric(sub(".*_", "", year))))) |>
+  unnest(year)
+
+teams_income_data <- teams_data |>
+  left_join(income_data, by = join_by(location == city))
+```
+
+```{r}
+
+all_contracts <- player_contracts_cleaned |>
+  left_join(minimum_salaries, by = join_by(year == year)) |>
+  filter(apy > min_salary) |>
+  left_join(teams_income_data, by = join_by(team == team, year == year)) |>
+  mutate(taxed_apy = (apy * (1 - income_jock_tax_rate) - .174) * (1 - 0.37),
+         taxed_guaranteed_apy = 
+           (guaranteed_apy * (1 - income_jock_tax_rate) - .174) * (1 - 0.37),
+         taxed_cash_paid = 
+           (cash_paid * (1 - income_jock_tax_rate) - .174) * (1 - 0.37)) |>
+  mutate(rpp_taxed_apy = taxed_apy / regional_price_parities,
+         rpp_taxed_guaranteed_apy = taxed_guaranteed_apy / regional_price_parities,
+         rpp_taxed_cash_paid = taxed_cash_paid / regional_price_parities)
+  
+
+base_contracts <- all_contracts |>
+  select(player, team, year, apy, guaranteed_apy, cash_paid, min_salary)
+
+taxed_contracts <- all_contracts |>
+  select(player, team, year, taxed_apy, taxed_guaranteed_apy, taxed_cash_paid, min_salary)
+
+adjusted_taxed_contracts <- all_contracts |>
+  select(player, team, year, 
+         rpp_taxed_apy, rpp_taxed_guaranteed_apy, rpp_taxed_cash_paid, min_salary)
+```
+
+```{r}
+
+base_contracts |>
+  ggplot(aes(x = apy / min_salary)) +
+  geom_histogram() +
+  facet_wrap(~ year, ncol = 2)
+
+base_contracts |>
+  ggplot(aes(x = year, y = guaranteed_apy / min_salary)) +
+  geom_histogram()
+
+base_contracts |>
+  ggplot(aes(x = year, y = cash_paid / min_salary)) +
+  geom_histogram()
+
+taxed_contracts |>
+  ggplot(aes(x = year, y = taxed_apy / min_salary)) +
+  geom_histogram()
+
+taxed_contracts |>
+  ggplot(aes(x = year, y = taxed_guaranteed_apy / min_salary)) +
+  geom_histogram()
+
+taxed_contracts |>
+  ggplot(aes(x = year, y = taxed_cash_paid / min_salary)) +
+  geom_histogram()
+
+adjusted_taxed_contracts |>
+  ggplot(aes(x = year, y = rpp_taxed_apy / min_salary)) +
+  geom_histogram()
+
+adjusted_taxed_contracts |>
+  ggplot(aes(x = year, y = rpp_taxed_guaranteed_apy / min_salary)) +
+  geom_histogram()
+
+adjusted_taxed_contracts |>
+  ggplot(aes(x = year, y = rpp_taxed_cash_paid / min_salary)) +
+  geom_histogram()
+  
+# run regression
+# which is the best contract
+
+#load_rosters()
+
+#years_exp
+#depth_chart_position
+#position
+```
+
+Compare to the minimum salary, that's how the real world works and how people think about lower/upper classes
+
+Don't use the cash_paid because although that makes sense it doesn't really show how players would think in economic terms with the value of their signing bonus—Ricardian equivalence thought process
+
+The base_contracts also don't really show a thought process and value that a player has—thought process example of Tyreek Hill: "Just those state taxes man. I had to make a grown up decision."
+
+Left to decide between guaranteed_apy and apy for taxed and rpp+taxed
