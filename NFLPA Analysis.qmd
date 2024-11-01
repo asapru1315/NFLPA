@@ -8,7 +8,6 @@ editor: visual
 
 library(tidyverse)
 library(nflreadr)
-library(ffscrapr)
 ```
 
 ```{r warning = FALSE}
