@@ -269,51 +269,58 @@ adjusted_taxed_contracts <- all_contracts |>
 
 ```{r}
 
-base_contracts |>
-  ggplot(aes(x = apy / min_salary)) +
-  geom_histogram() +
-  facet_wrap(~ year, ncol = 2)
+#base_contracts |>
+  #ggplot(aes(x = year, y = apy / min_salary)) +
+  #geom_point()
 
-base_contracts |>
-  ggplot(aes(x = year, y = guaranteed_apy / min_salary)) +
-  geom_histogram()
+#base_contracts |>
+  #ggplot(aes(x = year, y = guaranteed_apy / min_salary)) +
+  #geom_point()
 
-base_contracts |>
-  ggplot(aes(x = year, y = cash_paid / min_salary)) +
-  geom_histogram()
+#base_contracts |>
+  #ggplot(aes(x = year, y = cash_paid / min_salary)) +
+  #geom_point()
 
-taxed_contracts |>
-  ggplot(aes(x = year, y = taxed_apy / min_salary)) +
-  geom_histogram()
+#taxed_contracts |>
+  #ggplot(aes(x = year, y = taxed_apy / min_salary)) +
+  #geom_point()
 
-taxed_contracts |>
-  ggplot(aes(x = year, y = taxed_guaranteed_apy / min_salary)) +
-  geom_histogram()
+#taxed_contracts |>
+  #ggplot(aes(x = year, y = taxed_guaranteed_apy / min_salary)) +
+  #geom_point()
 
-taxed_contracts |>
-  ggplot(aes(x = year, y = taxed_cash_paid / min_salary)) +
-  geom_histogram()
+#taxed_contracts |>
+  #ggplot(aes(x = year, y = taxed_cash_paid / min_salary)) +
+  #geom_point()
 
-adjusted_taxed_contracts |>
-  ggplot(aes(x = year, y = rpp_taxed_apy / min_salary)) +
-  geom_histogram()
-
-adjusted_taxed_contracts |>
-  ggplot(aes(x = year, y = rpp_taxed_guaranteed_apy / min_salary)) +
-  geom_histogram()
+#adjusted_taxed_contracts |>
+  #ggplot(aes(x = year, y = rpp_taxed_apy / min_salary)) +
+  #geom_point()
 
 adjusted_taxed_contracts |>
-  ggplot(aes(x = year, y = rpp_taxed_cash_paid / min_salary)) +
-  geom_histogram()
+  ggplot(aes(x = year, y = rpp_taxed_guaranteed_apy / min_salary, alpha = 0.5)) +
+  geom_point()
+
+#adjusted_taxed_contracts |>
+  #ggplot(aes(x = year, y = rpp_taxed_cash_paid / min_salary)) +
+  #geom_point()
   
 # run regression
-# which is the best contract
-
-#load_rosters()
-
 #years_exp
 #depth_chart_position
 #position
+
+#EDA of data
+
+
+#segment into compensation tiers
+#middle class of players--increased or decreased in size
+
+
+#no more statistics
+
+#policies (research) about the shift
+#how to better advocate for interests of the middle class
 ```
 
 Compare to the minimum salary, that's how the real world works and how people think about lower/upper classes
@@ -322,4 +329,6 @@ Don't use the cash_paid because although that makes sense it doesn't really show
 
 The base_contracts also don't really show a thought process and value that a player has—thought process example of Tyreek Hill: "Just those state taxes man. I had to make a grown up decision."
 
-Left to decide between guaranteed_apy and apy for taxed and rpp+taxed
+Tax account (call some random person) says to use guaranteed money for professional athletes making decisions on their contract money
+
+Brock Purdy lives with a roommate due to high prices of SFO—so we used adjusted for the place they live
