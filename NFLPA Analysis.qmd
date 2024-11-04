@@ -328,6 +328,6 @@ Don't use the cash_paid because although that makes sense it doesn't really show
 
 The base_contracts also don't really show a thought process and value that a player has—thought process example of Tyreek Hill: "Just those state taxes man. I had to make a grown up decision."
 
-Tax account (call some random person) says to use guaranteed money for professional athletes making decisions on their contract money
+Tax account (call some random person) says to use guaranteed money for professional athletes making decisions on their contract money—permanent income hypothesis
 
 Brock Purdy lives with a roommate due to high prices of SFO—so we used adjusted for the place they live
