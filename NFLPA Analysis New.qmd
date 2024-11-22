@@ -7,9 +7,7 @@ editor: visual
 ```{r}
 
 library(tidyverse)
-```
-
-```{library(nflreadr)}
+library(nflreadr)
 ```
 
 ```{r warning = FALSE}
@@ -438,7 +436,7 @@ class_counts <- cluster_results %>%
 # Plot class sizes over time
 class_counts %>%
   ggplot(aes(x = year, y = count, fill = class)) +
-  geom_bar(stat = "identity", position = "stack") +
+  geom_bar(, stat = "identity", position = "stack") +
   labs(
     title = "Number of Players in Each Class Over Time (4 Clusters)",
     x = "Year",
@@ -525,7 +523,7 @@ class_medians <- cluster_results %>%
 print(class_medians)
 ```
 
-```{}
+```         
 ```
 
 ```{r}
