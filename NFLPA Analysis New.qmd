@@ -1,0 +1,716 @@
+---
+title: "NFLPA Analysis"
+format: html
+editor: visual
+---
+
+```{r}
+
+library(tidyverse)
+```
+
+```{library(nflreadr)}
+```
+
+```{r warning = FALSE}
+
+player_contracts <- load_contracts() |>
+  mutate(guaranteed_apy = guaranteed / years) |> # guaranteed annually calculation
+  rowwise() |>
+  drop_na(years) |>
+  group_by(player, year_signed, years) |> # create observation for each year on a contract
+  mutate(year = list(year_signed:(year_signed + years - 1))) |> 
+  ungroup() |>
+  unnest(year) |>
+  filter(year >= 2014 & year <= 2023) |> # only past 10 years, no full salary data until 2012
+  mutate(cash_paid = map2_dbl(cols, year, ~{ # pulls a cash paid value from contract history
+    if (is.null(.x)) { 
+      NA 
+    } else {
+      result <- .x %>% filter(year == .y) %>% pull(cash_paid)
+      if(length(result) == 0) NA else result 
+    }
+  })) |>
+  filter(!is.na(cash_paid)) |> # some players are not paid during a year, often retired
+  select(player, team, year, apy, guaranteed_apy, cash_paid) |>
+  distinct() |>
+  group_by(player, year) |>
+  filter(apy == max(apy)) |> # some contracts are restructured, taking the highest value
+  filter(guaranteed_apy == max(guaranteed_apy)) |>
+  distinct() |>
+  ungroup()
+```
+
+```{r}
+
+rosters <- load_rosters(seasons = c(2014:2023)) |>
+  rename(player = full_name, year = season)
+
+player_contracts <- player_contracts |> # some contracts are associated with two teams
+  mutate(has_multiple_teams = str_detect(team, "/"))
+
+player_contracts <- player_contracts |>
+  mutate(
+    player = case_when(
+      player == "Matt Stafford" ~ "Matthew Stafford",
+      player == "Odell Beckham Jr." ~ "Odell Beckham",
+      player == "Robbie Anderson" ~ "Robby Anderson",
+      player == "Clive Wolford" ~ "Clive Walford",
+      player == "Christopher Herndon IV" ~ "Christopher Herndon",
+      player == "Walt Powell" ~ "Walter Powell",
+      player == "Pierre Strong Jr." ~ "Pierre Strong",
+      player == "D.J. Scaife Jr." ~ "DJ Scaife",
+      player == "Mario Edwards Jr." ~ "Mario Edwards",
+      player == "Bennett Skowronek" ~ "Ben Skowronek",
+      player == "Neil Farrell Jr." ~ "Neil Farrell",
+      player == "Darryl Johnson Jr." ~ "Darryl Johnson",
+      player == "Dante Fowler Jr." ~ "Dante Fowler",
+      player == "Andrew Booth Jr." ~ "Andrew Booth",
+      player == "Carlos Basham Jr." ~ "Carlos Basham",
+      player == "William Jackson III" ~ "William Jackson",
+      player == "Starling Thomas V" ~ "Starling Thomas",
+      player == "Lonnie Johnson Jr." ~ "Lonnie Johnson",
+      player == "Kary Vincent Jr." ~ "Kary Vincent",
+      player == "Gary Jennings Jr." ~ "Gary Jennings",
+      player == "Ha-Ha Clinton-Dix" ~ "Ha Ha Clinton-Dix",
+      player == "J.J. Dielman" ~ "J.J Dielman",
+      player == "JaMycal Hasty" ~ "Jamycal Hasty",
+      player == "Joseph Barksdale" ~ "Joe Barksdale",
+      player == "Eric Scott" ~ "Eric Scott Jr.",
+      player == "Robbie Chosen" & year == 2021 ~ "Robby Anderson",
+      player == "Robbie Chosen" & year == 2022 ~ "Robby Anderson",
+      player == "Jeff Wilson" & year == 2022 ~ "Jeffery Wilson",
+      player == "Shaquille Mason" & year == 2016 ~ "Shaq Mason",
+      player == "Shaquille Mason" & year == 2017 ~ "Shaq Mason",
+      player == "Shaquille Mason" & year == 2018 ~ "Shaq Mason",
+      player == "Shaquille Mason" & year == 2019 ~ "Shaq Mason",
+      player == "Shaquille Mason" & year == 2023 ~ "Shaq Mason",
+      player == "Trent Brown" & year == 2015 ~ "Trenton Brown",
+      player == "Trent Brown" & year == 2020 ~ "Trenton Brown",
+      player == "Trent Brown" & year == 2021 ~ "Trenton Brown",
+      player == "Trent Brown" & year == 2022 ~ "Trenton Brown",
+      player == "Michael Jordan" & year == 2016 ~ "Mike Jordan",
+      player == "Michael Jordan" & year == 2017 ~ "Mike Jordan",
+      player == "Michael Jordan" & year == 2018 ~ "Mike Jordan",
+      player == "Michael Jordan" & year == 2019 ~ "Mike Jordan",
+      player == "Michael Harris" & year == 2014 ~ "Mike Harris",
+      player == "Vernon Hargreaves" & year == 2019 ~ "Vernon Hargreaves III",
+      player == "Ladarius Gunter" & year == 2016 ~ "LaDarius Gunter",
+       player == "Ladarius Gunter" & year == 2017 ~ "LaDarius Gunter",
+      player == "Deion Calhoun" & year == 2019 ~ "Shaq Calhoun",
+      player == "Ka'dar Hollman" & year == 2019 ~ "Ka'Dar Hollman",
+      player == "Matt Orzech" & year == 2019 ~ "Matthew Orzech",
+      player == "Ugochukwu Amadi" & year == 2019 ~ "Ugo Amadi",
+      player == "Kamrin Moore" & year == 2018 ~ "Kam Moore",
+      player == "R.J. McIntosh" & year == 2018 ~ "RJ McIntosh",
+      TRUE ~ player
+    )
+  )
+
+ multiple_team_contracts <- player_contracts |> # corrects for the last team played for in year
+  filter(has_multiple_teams == TRUE) |>
+  select(-team) |>
+  left_join(rosters, by = join_by(player, year)) |>
+  select(player, team, year, apy, guaranteed_apy, cash_paid) |>
+  mutate(team = case_when(
+    team == "ARZ" ~ "ARI",
+    team == "HST" ~ "HOU",
+    team == "BLT" ~ "BAL",
+    team == "CLV" ~ "CLE",
+    team == "OAK" ~ "LV",
+    team == "LAR" ~ "LA",
+    team == "SD" ~ "LAC",
+    team == "SL" ~ "LA",
+    TRUE ~ team
+  )) |>
+  left_join(load_teams(), by = join_by(team == team_abbr)) |>
+  select(-team) |>
+  rename(team = team_nick) |>
+  select(player, team, year, apy, guaranteed_apy, cash_paid)
+
+player_contracts_cleaned <- player_contracts |> # combines fully cleaned data about salaries
+  filter(has_multiple_teams == FALSE) |>
+  select(-has_multiple_teams) |>
+  bind_rows(multiple_team_contracts) |>
+  mutate(team = case_when(
+    player == "Kenjon Barner" & year == 2014 ~ "Eagles",
+    player == "Daryl Richardson" & year == 2014 ~ "Jets",
+    player == "Tyler Gaffney" & year == 2014 ~ "Patriots",
+    player == "Tyler Gaffney" & year == 2015 ~ "Patriots",
+    player == "James Wright" & year == 2015 ~ "Bengals",
+    player == "Arthur Lynch" & year == 2014 ~ "Dolphins",
+    player == "Randall Telfer" & year == 2015 ~ "Browns",
+    player == "A.J. Derby" & year == 2015 ~ "Patriots",
+    player == "Brandon Thomas" & year == 2014 ~ "49ers",
+    player == "Tre' Jackson" & year == 2016 ~ "Patriots",
+    player == "Mark Asper" & year == 2014 ~ "Giants",
+    player == "Garrett Gilkey" & year == 2015 ~ "Buccaneers",
+    player == "Demetrius Rhaney" & year == 2014 ~ "Rams",
+    player == "John Theus" & year == 2018 ~ "Titans",
+    player == "DeMarcus Love" & year == 2014 ~ "Saints",
+    player == "Jerel Worthy" & year == 2014 ~ "Chiefs",
+    player == "Louis Nix" & year == 2016 ~ "Jaguars",
+    player == "Khyri Thornton" & year == 2014 ~ "Packers",
+    player == "Dante Fowler" & year == 2015 ~ "Jaguars",
+    player == "Joe Kruger" & year == 2014 ~ "Chargers",
+    player == "Nate Palmer" & year == 2014 ~ "Packers",
+    player == "Marquis Flowers" & year == 2015 ~ "Bengals",
+    player == "Kenneth Acker" & year == 2014 ~ "49ers",
+    player == "E.J. Gaines" & year == 2015 ~ "Rams",
+    player == "Tevin Mitchel" & year == 2015 ~ "Commanders",
+    player == "Christopher Herndon" & year == 2018 ~ "Jets",
+    player == "Christopher Herndon" & year == 2019 ~ "Jets",
+    player == "Matthew Wells" & year == 2015 ~ "Rams",
+    TRUE ~ team
+  )) 
+```
+
+```{r}
+
+teams_data <- data.frame(
+  team = c("Panthers", "Seahawks", "Eagles", "Raiders", "Packers", "Bills", "Chargers",
+           "Falcons", "49ers", "Cardinals", "Dolphins", "Vikings", "Jets", "Steelers", 
+           "Giants", "Titans", "Colts", "Saints", "Broncos", "Ravens", "Lions", "Bengals", 
+           "Rams", "Patriots", "Browns", "Bears", "Jaguars", "Cowboys", "Commanders", 
+           "Buccaneers", "Texans", "Chiefs"),
+ team_2014_2017 = c("Charlotte, NC", "Seattle, WA", "Philadelphia, PA", "Oakland, CA", 
+            "Green Bay, WI", "Orchard Park, NY", "San Diego, CA", "Atlanta, GA", 
+            "Santa Clara, CA", "Glendale, AZ", "Miami Gardens, FL", "Minneapolis, MN", 
+            "East Rutherford, NJ", "Pittsburgh, PA", "East Rutherford, NJ", "Nashville, TN", 
+            "Indianapolis, IN", "New Orleans, LA", "Denver, CO", "Baltimore, MD", 
+            "Detroit, MI", "Cincinnati, OH", "St. Louis, MO", "Foxborough, MA", 
+            "Cleveland, OH", "Chicago, IL", "Jacksonville, FL", "Arlington, TX", 
+            "Landover, MD", "Tampa, FL", "Houston, TX", "Kansas City, MO"),
+ team_2018_2019 = c("Charlotte, NC", "Seattle, WA", "Philadelphia, PA", "Oakland, CA", 
+            "Green Bay, WI", "Orchard Park, NY", "Carson, CA", "Atlanta, GA", 
+            "Santa Clara, CA", "Glendale, AZ", "Miami Gardens, FL", "Minneapolis, MN", 
+            "East Rutherford, NJ", "Pittsburgh, PA", "East Rutherford, NJ", "Nashville, TN", 
+            "Indianapolis, IN", "New Orleans, LA", "Denver, CO", "Baltimore, MD", 
+            "Detroit, MI", "Cincinnati, OH", "Los Angeles, CA", "Foxborough, MA", 
+            "Cleveland, OH", "Chicago, IL", "Jacksonville, FL", "Arlington, TX", 
+            "Landover, MD", "Tampa, FL", "Houston, TX", "Kansas City, MO"),
+ team_2020_2023 = c("Charlotte, NC", "Seattle, WA", "Philadelphia, PA", "Paradise, NV", 
+            "Green Bay, WI", "Orchard Park, NY", "Inglewood, CA", "Atlanta, GA", 
+            "Santa Clara, CA", "Glendale, AZ", "Miami Gardens, FL", "Minneapolis, MN", 
+            "East Rutherford, NJ", "Pittsburgh, PA", "East Rutherford, NJ", "Nashville, TN", 
+            "Indianapolis, IN", "New Orleans, LA", "Denver, CO", "Baltimore, MD", 
+            "Detroit, MI", "Cincinnati, OH", "Inglewood, CA", "Foxborough, MA", 
+            "Cleveland, OH", "Chicago, IL", "Jacksonville, FL", "Arlington, TX", 
+            "Landover, MD", "Tampa, FL", "Houston, TX", "Kansas City, MO")
+  )
+
+income_data <- data.frame(
+  city = c("Glendale, AZ", "Carson, CA", "Inglewood, CA", "Los Angeles, CA", "Oakland, CA", 
+  "San Diego, CA", "Santa Clara, CA", "Denver, CO", "Jacksonville, FL", "Miami Gardens, FL", 
+  "Tampa, FL", "Atlanta, GA", "Chicago, IL", "Indianapolis, IN", "New Orleans, LA", 
+  "Foxborough, MA", "Baltimore, MD", "Landover, MD", "Detroit, MI", "Minneapolis, MN", 
+  "Kansas City, MO", "St. Louis, MO", "Charlotte, NC", "East Rutherford, NJ", "Paradise, NV", 
+  "Orchard Park, NY", "Cincinnati, OH", "Cleveland, OH", "Philadelphia, PA", "Pittsburgh, PA",
+  "Nashville, TN", "Arlington, TX", "Houston, TX", "Seattle, WA", "Green Bay, WI"),
+  income_jock_tax_rate = c(0.025, 0.123, 0.123, 0.123, 0.123, 0.123, 0.123, 0.044, 0.02, 0.02,
+                           0.02, 0.0549, 0.0495, 0.0507, 0.0425, 0.05, 0.0895, 0.0895, 0.0545,
+                           0.0985, 0.058, 0.058, 0.045, 0.0897, 0.02, 0.0825, 0.053, 0.06, 
+                           0.0682, 0.0607, 0.02, 0.02, 0.02, 0.02, 0.0765),
+  regional_price_parities = c(1.03683, 1.13109, 1.13109, 1.13109, 1.17895, 1.14511, 1.17895, 
+                              1.07394, 0.98476, 1.11512, 0.99701, 0.98753, 1.05744, 0.93708, 
+                              0.93635, 1.03921, 1.02428, 1.11316, 0.96134, 1.02948, 0.92149, 
+                              0.96671, 0.96888, 1.13048, 0.96526, 0.93882, 0.93479, 0.93073, 
+                              1.00689, 0.93854, 0.96579, 1.03523, 0.98762, 1.13676, 0.9046)
+  )
+
+minimum_salaries <- data.frame(year = c(2013, 2014, 2015, 2016, 2017, 2018, 2019, 
+                                       2020, 2021, 2022, 2023), 
+                              min_salary = c(.405, .420, .435, .450, .465, .480, 
+                                             .495, .610, .660, .705, .750)
+                              )
+                            
+teams_data <- teams_data |>
+  pivot_longer(cols = starts_with("team_"), 
+               names_to = "year", 
+               values_to = "location")
+
+teams_data$year <- gsub("team_", "", teams_data$year)
+
+teams_data <- teams_data |>
+  rowwise() |>
+  mutate(year = list(seq(as.numeric(sub("_.*", "", year)), 
+                         as.numeric(sub(".*_", "", year))))) |>
+  unnest(year)
+
+teams_income_data <- teams_data |>
+  left_join(income_data, by = join_by(location == city))
+```
+
+```{r}
+
+all_contracts <- player_contracts_cleaned |>
+  left_join(minimum_salaries, by = join_by(year == year)) |>
+  filter(apy > min_salary) |>
+  left_join(teams_income_data, by = join_by(team == team, year == year)) |>
+  mutate(taxed_apy = (apy * (1 - income_jock_tax_rate) - .174) * (1 - 0.37),
+         taxed_guaranteed_apy = 
+           (guaranteed_apy * (1 - income_jock_tax_rate) - .174) * (1 - 0.37),
+         taxed_cash_paid = 
+           (cash_paid * (1 - income_jock_tax_rate) - .174) * (1 - 0.37)) |>
+  mutate(rpp_taxed_apy = taxed_apy / regional_price_parities,
+         rpp_taxed_guaranteed_apy = taxed_guaranteed_apy / regional_price_parities,
+         rpp_taxed_cash_paid = taxed_cash_paid / regional_price_parities)
+  
+
+base_contracts <- all_contracts |>
+  select(player, team, year, apy, guaranteed_apy, cash_paid, min_salary)
+
+taxed_contracts <- all_contracts |>
+  select(player, team, year, taxed_apy, taxed_guaranteed_apy, taxed_cash_paid, min_salary)
+
+adjusted_taxed_contracts <- all_contracts |>
+  select(player, team, year, 
+         rpp_taxed_apy, rpp_taxed_guaranteed_apy, rpp_taxed_cash_paid, min_salary)
+```
+
+```{r}
+
+#base_contracts |>
+  #ggplot(aes(x = year, y = apy / min_salary)) +
+  #geom_point()
+
+#base_contracts |>
+  #ggplot(aes(x = year, y = guaranteed_apy / min_salary)) +
+  #geom_point()
+
+#base_contracts |>
+  #ggplot(aes(x = year, y = cash_paid / min_salary)) +
+  #geom_point()
+
+#taxed_contracts |>
+  #ggplot(aes(x = year, y = taxed_apy / min_salary)) +
+  #geom_point()
+
+#taxed_contracts |>
+  #ggplot(aes(x = year, y = taxed_guaranteed_apy / min_salary)) +
+  #geom_point()
+
+#taxed_contracts |>
+  #ggplot(aes(x = year, y = taxed_cash_paid / min_salary)) +
+  #geom_point()
+
+#adjusted_taxed_contracts |>
+  #ggplot(aes(x = year, y = rpp_taxed_apy / min_salary)) +
+  #geom_point()
+
+adjusted_taxed_contracts |>
+  ggplot(aes(x = year, y = rpp_taxed_guaranteed_apy / min_salary, alpha = 0.5)) +
+  geom_point()
+
+#adjusted_taxed_contracts |>
+  #ggplot(aes(x = year, y = rpp_taxed_cash_paid / min_salary)) +
+  #geom_point()
+  
+# run regression
+#years_exp
+#depth_chart_position
+#position
+
+#EDA of data
+
+
+#segment into compensation tiers
+#middle class of players--increased or decreased in size
+
+
+#no more statistics
+
+#policies (research) about the shift
+#how to better advocate for interests of the middle class
+```
+
+```{r}
+library(tidyverse)
+library(nflreadr)
+library(cluster)
+library(broom)  
+library(factoextra)
+
+adjusted_taxed_contracts <- adjusted_taxed_contracts %>%
+  mutate(ratio = rpp_taxed_guaranteed_apy) %>%
+  filter(ratio > 0) %>% 
+  mutate (log_ratio = log10(ratio))
+adjusted_taxed_contracts <- adjusted_taxed_contracts %>%
+  filter(!is.infinite(log_ratio), !is.na(log_ratio))
+
+# Function to compute WSS and silhouette scores for a range of k values
+compute_cluster_metrics <- function(data_year) {
+  wss <- numeric(10)
+  avg_silhouette <- numeric(10)
+  
+  for (k in 3:10) {  # Start k from 3 to avoid underfitting
+  kmeans_result <- kmeans(data_year$log_ratio, centers = k, nstart = 20)
+  wss[k] <- kmeans_result$tot.withinss
+  
+  # Compute silhouette scores
+  silhouette_scores <- silhouette(kmeans_result$cluster, dist(data_year$log_ratio))
+  avg_silhouette[k] <- mean(silhouette_scores[, 3])
+}
+tibble(
+  k = 3:10,
+  wss = wss[3:10],
+  avg_silhouette = avg_silhouette[3:10],
+  year = unique(data_year$year)
+)
+}
+```
+
+```{r}
+# Step 1: Compute WSS and silhouette scores for each year
+cluster_metrics <- adjusted_taxed_contracts %>%
+  group_by(year) %>%
+  group_modify(~ compute_cluster_metrics(.x)) %>%
+  ungroup()
+
+# Step 2: Plot the Elbow Curve for WSS
+cluster_metrics %>%
+  ggplot(aes(x = k, y = wss, group = year, color = factor(year))) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Elbow Method for Optimal k",
+    x = "Number of Clusters (k)",
+    y = "Total Within-Cluster Sum of Squares (WSS)",
+    color = "Year"
+  ) +
+  theme_minimal()
+
+# Step 3: Plot Silhouette Scores
+cluster_metrics %>%
+  ggplot(aes(x = k, y = avg_silhouette, group = year, color = factor(year))) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Silhouette Scores for Different k",
+    x = "Number of Clusters (k)",
+    y = "Average Silhouette Score",
+    color = "Year"
+  ) +
+  theme_minimal()
+
+# Step 4: Determine optimal k for each year based on silhouette score
+optimal_k <- cluster_metrics %>%
+  group_by(year) %>%
+  filter(avg_silhouette == max(avg_silhouette, na.rm = TRUE)) %>%
+  select(year, optimal_k = k)
+
+print(optimal_k)
+```
+
+```{r}
+set.seed(123)
+cluster_results <- adjusted_taxed_contracts %>%
+  group_by(year) %>%
+  group_modify(~ {
+    data = .x
+    k = 4  # Fix the number of clusters to 4
+    kmeans_result <- kmeans(data$log_ratio, centers = k, nstart = 20)
+    data$cluster <- kmeans_result$cluster
+    data$cluster_center <- kmeans_result$centers[data$cluster]
+    data
+  }) %>%
+  ungroup()
+
+# Assign ranks and classify clusters into categories
+cluster_results <- cluster_results %>%
+  group_by(year) %>%
+  mutate(
+    cluster_rank = dense_rank(cluster_center),
+    class = case_when(
+      cluster_rank == 1 ~ "Lower",
+      cluster_rank == 2 ~ "Lower-Middle",
+      cluster_rank == 3 ~ "Upper-Middle",
+      TRUE ~ "Upper"
+    )
+  ) %>%
+  ungroup()
+
+# Count the number of players in each class for each year
+class_counts <- cluster_results %>%
+  group_by(year, class) %>%
+  summarise(count = n(), .groups = 'drop')
+
+# Plot class sizes over time
+class_counts %>%
+  ggplot(aes(x = year, y = count, fill = class)) +
+  geom_bar(stat = "identity", position = "stack") +
+  labs(
+    title = "Number of Players in Each Class Over Time (4 Clusters)",
+    x = "Year",
+    y = "Number of Players",
+    fill = "Class"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+set.seed(123)
+cluster_results <- adjusted_taxed_contracts %>%
+  left_join(optimal_k, by = "year") %>%
+  group_by(year) %>%
+  group_modify(~ {
+    data = .x
+    k = unique(data$optimal_k)
+    kmeans_result <- kmeans(data$log_ratio, centers = k, nstart = 20)
+    data$cluster <- kmeans_result$cluster
+    data$cluster_center <- kmeans_result$centers[data$cluster]
+    data
+  }) %>%
+  ungroup()
+
+cluster_results <- cluster_results %>%
+  group_by(year) %>%
+  mutate(
+    cluster_rank = dense_rank(cluster_center),
+    class = case_when(
+      cluster_rank == 1 ~ "Lower",
+      cluster_rank == 2 ~ "Middle",
+      TRUE ~ "Upper"
+    )
+  ) %>%
+  ungroup()
+
+class_counts <- cluster_results %>%
+  group_by(year, class) %>%
+  summarise(count = n(), .groups = 'drop')
+
+# Plot class sizes over time
+class_counts %>%
+  ggplot(aes(x = year, y = count, fill = class)) +
+  geom_bar(stat = "identity", position = "stack") +
+  labs(
+    title = "Number of Players in Each Class Over Time",
+    x = "Year",
+    y = "Number of Players",
+    fill = "Class"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+class_proportions <- cluster_results %>%
+  group_by(year) %>%
+  mutate(total_players = n()) %>%
+  group_by(year, class) %>%
+  summarise(count = n(), total_players = first(total_players), .groups = 'drop') %>%
+  mutate(proportion = count / total_players)
+
+class_proportions %>%
+  ggplot(aes(x = year, y = proportion, fill = class)) +
+  geom_bar(stat = "identity", position = "stack") +
+  labs(
+    title = "Proportion of Players in Each Class Over Time",
+    x = "Year",
+    y = "Proportion of Players",
+        fill = "Class"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+# Calculate and print the median salary for each class in each year
+class_medians <- cluster_results %>%
+  group_by(year, class) %>%
+  summarise(
+    median_salary = median(rpp_taxed_apy, na.rm = TRUE),  # Adjust column name if needed
+    .groups = 'drop'
+  )
+
+# Print the results
+print(class_medians)
+```
+
+```{}
+```
+
+```{r}
+adjusted_taxed_contracts %>%
+  ggplot(aes(x = log_ratio, fill = as.factor(year))) +
+  geom_density(alpha = 0.5) +
+  facet_wrap(~year) +
+  labs(title = "Salary Distribution Over Years")
+```
+
+```{r}
+percentile_class_data <- adjusted_taxed_contracts %>%
+  group_by(year) %>%
+  mutate(
+    lower_percentile = quantile(log_ratio, 0.33, na.rm = TRUE),
+    upper_percentile = quantile(log_ratio, 0.67, na.rm = TRUE),
+    salary_class = case_when(
+      log_ratio < lower_percentile ~ "Lower",
+      log_ratio <= upper_percentile ~ "Middle",
+      TRUE ~ "Upper"
+    )
+  ) %>%
+  ungroup()
+
+class_summary <- percentile_class_data %>%
+  group_by(year, salary_class) %>%
+  summarise(player_count = n(), .groups = 'drop')
+
+class_summary %>%
+  ggplot(aes(x = year, y = player_count, fill = salary_class)) +
+  geom_bar(stat = "identity", position = "stack") +
+  labs(
+    title = "Number of Players in Each Salary Class Over Time (Percentile-Based)",
+    x = "Year",
+    y = "Number of Players",
+    fill = "Salary Class"
+  ) +
+  theme_minimal()
+
+class_proportions <- class_summary %>%
+  group_by(year) %>%
+  mutate(proportion = player_count / sum(player_count))
+
+# Plot the proportion of players in each salary class for each year
+class_proportions %>%
+  ggplot(aes(x = year, y = proportion, fill = salary_class)) +
+  geom_bar(stat = "identity", position = "stack") +
+  labs(
+    title = "Proportion of Players in Each Salary Class Over Time (Percentile-Based)",
+    x = "Year",
+    y = "Proportion of Players",
+    fill = "Salary Class"
+  ) +
+  theme_minimal()
+
+percentile_class_data %>%
+  ggplot(aes(x = log_ratio, fill = salary_class)) +
+  geom_density(alpha = 0.5) +
+  facet_wrap(~year, scales = "free") +
+  geom_vline(aes(xintercept = lower_percentile), linetype = "dashed", color = "blue") +
+  geom_vline(aes(xintercept = upper_percentile), linetype = "dashed", color = "red") +
+  labs(
+    title = "Salary Distribution with Percentile-Based Class Boundaries",
+    x = "Log Ratio (Salary / Minimum Salary)",
+    y = "Density",
+    fill = "Salary Class"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+percentile_trends <- adjusted_taxed_contracts %>%
+  group_by(year) %>%
+  summarise(
+    lower_percentile_salary = quantile(rpp_taxed_guaranteed_apy, 0.33, na.rm = TRUE),
+    upper_percentile_salary = quantile(rpp_taxed_guaranteed_apy, 0.67, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+percentile_trends %>%
+  pivot_longer(
+    cols = c(lower_percentile_salary, upper_percentile_salary),
+    names_to = "percentile",
+    values_to = "salary"
+  ) %>%
+  ggplot(aes(x = year, y = salary, color = percentile)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 3) +
+  labs(
+    title = "Trends in 33rd and 67th Percentile Salaries Over Time",
+    x = "Year",
+    y = "Salary (Adjusted for Taxes and Parities)",
+    color = "Percentile"
+  ) +
+  theme_minimal()
+
+percentile_trends_with_median <- adjusted_taxed_contracts %>%
+  group_by(year) %>%
+  summarise(
+    lower_percentile_salary = quantile(rpp_taxed_guaranteed_apy, 0.33, na.rm = TRUE),
+    median_salary = median(rpp_taxed_guaranteed_apy, na.rm = TRUE),
+    upper_percentile_salary = quantile(rpp_taxed_guaranteed_apy, 0.67, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+percentile_trends_with_median %>%
+  pivot_longer(
+    cols = c(lower_percentile_salary, median_salary, upper_percentile_salary),
+    names_to = "percentile",
+    values_to = "salary"
+  ) %>%
+  ggplot(aes(x = year, y = salary, color = percentile)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 3) +
+  labs(
+    title = "Trends in 33rd, 50th (Median), and 67th Percentile Salaries Over Time",
+    x = "Year",
+    y = "Salary (Adjusted for Taxes and Parities)",
+    color = "Percentile"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+middle_class_analysis <- adjusted_taxed_contracts %>%
+  left_join(minimum_salaries, by = "year") %>%
+  mutate(
+    # Use the correct salary column, e.g., rpp_taxed_apy
+    middle_class = case_when(
+      rpp_taxed_apy >= 2 * min_salary & rpp_taxed_apy <= 4 * min_salary ~ TRUE,
+      TRUE ~ FALSE
+    )
+  ) %>%
+  group_by(year) %>%
+  summarise(
+    total_players = n(),
+    middle_class_count = sum(middle_class, na.rm = TRUE),
+    middle_class_proportion = middle_class_count / total_players
+  )
+
+middle_class_analysis %>%
+  ggplot(aes(x = year, y = middle_class_count)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 3) +
+  labs(
+    title = "Number of Middle-Class Players (2–4× Minimum Salary) Over Time",
+    x = "Year",
+    y = "Number of Middle-Class Players"
+  ) +
+  theme_minimal()
+
+middle_class_analysis %>%
+  ggplot(aes(x = year, y = middle_class_proportion)) +
+  geom_line(size = 1.2, color = "blue") +
+  geom_point(size = 3, color = "blue") +
+  labs(
+    title = "Proportion of Middle-Class Players Over Time",
+    x = "Year",
+    y = "Proportion of Middle-Class Players"
+  ) +
+  theme_minimal()
+
+middle_class_analysis %>%
+  pivot_longer(
+    cols = c(middle_class_count, total_players),
+    names_to = "Player_Type",
+    values_to = "Count"
+  ) %>%
+  ggplot(aes(x = year, y = Count, fill = Player_Type)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(
+    title = "Middle-Class Players vs. Total Players Over Time",
+    x = "Year",
+    y = "Number of Players",
+    fill = "Player Type"
+  ) +
+  theme_minimal()
+```
+
+Compare to the minimum salary, that's how the real world works and how people think about lower/upper classes
+
+Don't use the cash_paid because although that makes sense it doesn't really show how players would think in economic terms with the value of their signing bonus—Ricardian equivalence thought process
+
+The base_contracts also don't really show a thought process and value that a player has—thought process example of Tyreek Hill: "Just those state taxes man. I had to make a grown up decision."
+
+Tax account (call some random person) says to use guaranteed money for professional athletes making decisions on their contract money—permanent income hypothesis
+
+Brock Purdy lives with a roommate due to high prices of SFO—so we used adjusted for the place they live
